@@ -1,0 +1,69 @@
+// src/supertux/menu/options_menu.hpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+//  SuperTux
+//  Copyright (C) 2004 Tobas Glaesser <tobi.web@gmx.de>
+//  Copyright (C) 2006 Matthias Braun <matze@braunis.de>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#ifndef HEADER_SUPERTUX_SUPERTUX_OPTIONS_MENU_HPP
+#define HEADER_SUPERTUX_SUPERTUX_OPTIONS_MENU_HPP
+
+#include <string>
+#include <vector>
+
+#include "gui/menu.hpp"
+
+class MenuItem;
+
+class OptionsMenu : public Menu
+{
+  public:
+    OptionsMenu(bool complete);
+    virtual ~OptionsMenu();
+
+    void menu_action(MenuItem* item) override;
+    void on_window_resize() override;
+    void refresh() override;
+
+    /* The VSync row's help runs to three lines, deep enough to reach the
+       notice at the foot of the title screen, so this menu is placed together
+       with its help rather than on its own. */
+    bool placed_with_help() const override { return true; }
+
+  private:
+    /** Apply a change to the video mode, keeping the pointer on whatever row
+        of this menu it was already over. */
+    void apply_video_change();
+
+  private:
+    int next_magnification;
+    int next_aspect_ratio;
+    int next_vsync;
+
+    std::vector<std::string> magnifications;
+    std::vector<std::string> aspect_ratios;
+    std::vector<std::string> vsyncs;
+
+    MenuItem* resolution_item;
+
+  private:
+    OptionsMenu(const OptionsMenu&) = delete;
+    OptionsMenu& operator=(const OptionsMenu&) = delete;
+};
+
+#endif
+
+/* EOF */

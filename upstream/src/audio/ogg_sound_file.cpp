@@ -1,0 +1,175 @@
+// src/audio/ogg_sound_file.cpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+//  SuperTux
+//  Copyright (C) 2006 Matthias Braun <matze@braunis.de>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include "audio/ogg_sound_file.hpp"
+
+#include <assert.h>
+#include <bit>
+
+#include "audio/sound_error.hpp"
+#include "util/file_system.hpp"
+
+OggSoundFile::OggSoundFile(const std::string& filename, double loop_begin_, double loop_at_) :
+  file(),
+  vorbis_file(),
+  loop_begin(),
+  loop_at(),
+  normal_buffer_loop()
+{
+  const std::string path = FileSystem::find(filename);
+  if(path.empty())
+    throw SoundError("Couldn't open '" + filename + "': not found");
+
+  file.open(path, std::ios::in | std::ios::binary);
+  if(!file.is_open())
+    throw SoundError("Couldn't open '" + path + "'");
+
+  ov_callbacks callbacks = { cb_read, cb_seek, cb_close, cb_tell };
+  if(ov_open_callbacks(&file, &vorbis_file, 0, 0, callbacks) < 0)
+    throw SoundError("Couldn't read vorbis file '" + path + "'");
+
+  vorbis_info* vi = ov_info(&vorbis_file, -1);
+
+  channels        = vi->channels;
+  rate            = vi->rate;
+  bits_per_sample = 16;
+  size            = static_cast<size_t> (ov_pcm_total(&vorbis_file, -1) * 2);
+
+  double samples_begin = loop_begin_ * rate;
+  double sample_loop   = loop_at_ * rate;
+
+  this->loop_begin     = (ogg_int64_t) samples_begin;
+  if(loop_begin_ < 0) {
+    this->loop_at = (ogg_int64_t) -1;
+  } else {
+    this->loop_at = (ogg_int64_t) sample_loop;
+  }
+}
+
+OggSoundFile::~OggSoundFile()
+{
+  ov_clear(&vorbis_file);
+}
+
+size_t
+OggSoundFile::read(void* _buffer, size_t buffer_size)
+{
+  char*  buffer         = reinterpret_cast<char*> (_buffer);
+  int    section        = 0;
+  size_t totalBytesRead = 0;
+
+  while(buffer_size>0) {
+    constexpr int bigendian = (std::endian::native == std::endian::big) ? 1 : 0;
+
+    size_t bytes_to_read    = buffer_size;
+    if(loop_at > 0) {
+      ogg_int64_t bytes_per_sample       = 2;
+      ogg_int64_t time                   = ov_pcm_tell(&vorbis_file);
+      ogg_int64_t samples_left_till_loop = loop_at - time;
+      ogg_int64_t bytes_left_till_loop
+        = samples_left_till_loop * bytes_per_sample;
+      if(bytes_left_till_loop <= 4)
+        break;
+
+      if(bytes_left_till_loop < (ogg_int64_t) bytes_to_read) {
+        bytes_to_read    = (size_t) bytes_left_till_loop;
+      }
+    }
+
+    long bytesRead
+      = ov_read(&vorbis_file, buffer, bytes_to_read, bigendian,
+                2, 1, &section);
+    /* Zero ends the stream and anything below it is an error code, never a
+       length. */
+    if(bytesRead <= 0) {
+      break;
+    }
+
+    const size_t bytes = static_cast<size_t>(bytesRead);
+    buffer_size    -= bytes;
+    buffer         += bytes;
+    totalBytesRead += bytes;
+  }
+
+  return totalBytesRead;
+}
+
+void
+OggSoundFile::reset()
+{
+  ov_pcm_seek(&vorbis_file, loop_begin);
+}
+
+size_t
+OggSoundFile::cb_read(void* ptr, size_t size, size_t nmemb, void* source)
+{
+  auto file = reinterpret_cast<std::ifstream*> (source);
+  if(size == 0)
+    return 0;
+
+  file->read(static_cast<char*> (ptr), static_cast<std::streamsize> (size * nmemb));
+  const std::streamsize got = file->gcount();
+  if(file->bad())
+    return 0;
+
+  // A short read is how vorbisfile discovers the end; clear it so the next
+  // seek is not refused by a sticky eofbit.
+  file->clear();
+
+  return static_cast<size_t> (got) / size;
+}
+
+int
+OggSoundFile::cb_seek(void* source, ogg_int64_t offset, int whence)
+{
+  auto file = reinterpret_cast<std::ifstream*> (source);
+  std::ios::seekdir dir;
+
+  switch(whence) {
+    case SEEK_SET: dir = std::ios::beg; break;
+    case SEEK_CUR: dir = std::ios::cur; break;
+    case SEEK_END: dir = std::ios::end; break;
+    default:
+      assert(false);
+      return -1;
+  }
+
+  file->clear();
+  if(!file->seekg(static_cast<std::streamoff> (offset), dir))
+    return -1;
+
+  return 0;
+}
+
+int
+OggSoundFile::cb_close(void* source)
+{
+  // The stream is a member of the OggSoundFile and closes with it.
+  (void) source;
+  return 0;
+}
+
+long
+OggSoundFile::cb_tell(void* source)
+{
+  auto file = reinterpret_cast<std::ifstream*> (source);
+  return static_cast<long> (file->tellg());
+}
+
+/* EOF */

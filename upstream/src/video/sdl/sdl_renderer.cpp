@@ -1,0 +1,380 @@
+// src/video/sdl/sdl_renderer.cpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+//  SuperTux
+//  Copyright (C) 2006 Matthias Braun <matze@braunis.de>
+//	Updated by GiBy 2013 for SDL2 <giby_the_kid@yahoo.fr>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include "video/sdl/sdl_renderer.hpp"
+
+#include "util/log.hpp"
+#include "video/drawing_request.hpp"
+#include "video/sdl/sdl_surface_data.hpp"
+#include "video/sdl/sdl_texture.hpp"
+#include "video/sdl/sdl_painter.hpp"
+
+#include <cmath>
+#include <iostream>
+#include <sstream>
+#include <stdexcept>
+#include <memory>
+#include <string>
+#include "SDL2/SDL_video.h"
+
+#include "video/util.hpp"
+
+SDLRenderer::SDLRenderer() :
+  m_window(),
+  m_renderer(),
+  m_viewport(),
+  m_scale(1.0f, 1.0f)
+{
+  log_info << "creating SDLRenderer" << std::endl;
+  int width  = g_config->window_size.width;
+  int height = g_config->window_size.height;
+
+  Uint32 flags = SDL_WINDOW_RESIZABLE;
+
+  if(g_config->use_fullscreen)
+  {
+    if (g_config->fullscreen_size == Size(0, 0))
+    {
+      flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+      width = g_config->window_size.width;
+      height = g_config->window_size.height;
+    }
+    else
+    {
+      flags |= SDL_WINDOW_FULLSCREEN;
+      width  = g_config->fullscreen_size.width;
+      height = g_config->fullscreen_size.height;
+    }
+  }
+
+  SCREEN_WIDTH = width;
+  SCREEN_HEIGHT = height;
+
+  m_viewport.x = 0;
+  m_viewport.y = 0;
+  m_viewport.w = width;
+  m_viewport.h = height;
+
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
+
+  /* The window and the renderer are made separately because the call that
+     makes both at once takes flags for the window only, and the swap is
+     asked for through a renderer flag. */
+  m_window = SDL_CreateWindow("SuperTux",
+                              SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                              width, height, flags);
+  if(m_window == NULL) {
+    std::stringstream msg;
+    msg << "Couldn't set video mode (" << width << "x" << height
+        << "): " << SDL_GetError();
+    throw std::runtime_error(msg.str());
+  }
+
+  /* This renderer waits or it does not, so the mode that lets a late frame
+     through is taken as a plain wait. */
+  Uint32 renderer_flags = 0;
+  if(g_config->vsync != 0) {
+    renderer_flags |= SDL_RENDERER_PRESENTVSYNC;
+  }
+
+  m_renderer = SDL_CreateRenderer(m_window, -1, renderer_flags);
+  if(m_renderer == NULL && renderer_flags != 0) {
+    /* Not every driver can wait for the vertical blank. Rather than run with
+       no renderer at all, ask again without it. */
+    log_info << "no support for vsync: " << SDL_GetError() << std::endl;
+    m_renderer = SDL_CreateRenderer(m_window, -1, 0);
+  }
+
+  if(m_renderer == NULL) {
+    std::stringstream msg;
+    msg << "Couldn't create renderer (" << width << "x" << height
+        << "): " << SDL_GetError();
+    throw std::runtime_error(msg.str());
+  }
+
+  SDL_RendererInfo info;
+  if (SDL_GetRendererInfo(m_renderer, &info) != 0)
+  {
+    log_warning << "Couldn't get RendererInfo: " << SDL_GetError() << std::endl;
+  }
+  else
+  {
+    log_info << "SDL_Renderer: " << info.name << std::endl;
+    log_info << "SDL_RendererFlags: " << std::endl;
+    if (info.flags & SDL_RENDERER_SOFTWARE) { log_info << "  SDL_RENDERER_SOFTWARE" << std::endl; }
+    if (info.flags & SDL_RENDERER_ACCELERATED) { log_info << "  SDL_RENDERER_ACCELERATED" << std::endl; }
+    if (info.flags & SDL_RENDERER_PRESENTVSYNC) { log_info << "  SDL_RENDERER_PRESENTVSYNC" << std::endl; }
+    if (info.flags & SDL_RENDERER_TARGETTEXTURE) { log_info << "  SDL_RENDERER_TARGETTEXTURE" << std::endl; }
+    log_info << "Texture Formats: " << std::endl;
+    for(size_t i = 0; i < info.num_texture_formats; ++i)
+    {
+      log_info << "  " << SDL_GetPixelFormatName(info.texture_formats[i]) << std::endl;
+    }
+  }
+
+  apply_config();
+}
+
+SDLRenderer::~SDLRenderer()
+{
+  SDL_DestroyRenderer(m_renderer);
+  SDL_DestroyWindow(m_window);
+}
+
+void
+SDLRenderer::start_draw()
+{
+  SDL_RenderSetScale(m_renderer, m_scale.x, m_scale.y);
+}
+
+void
+SDLRenderer::end_draw()
+{
+  /* SDL rewrites the coordinates of a mouse event by whatever scale the
+     renderer carries at the time, so the scale is only worn while drawing.
+     Events then arrive in window pixels, the same as the GL renderer, and
+     one conversion puts them in the game's own units. */
+  SDL_RenderSetScale(m_renderer, 1.0f, 1.0f);
+}
+
+void
+SDLRenderer::draw_surface(const DrawingRequest& request)
+{
+  SDLPainter::draw_surface(m_renderer, request);
+}
+
+void
+SDLRenderer::draw_surface_part(const DrawingRequest& request)
+{
+  SDLPainter::draw_surface_part(m_renderer, request);
+}
+
+void
+SDLRenderer::draw_gradient(const DrawingRequest& request)
+{
+  SDLPainter::draw_gradient(m_renderer, request);
+}
+
+void
+SDLRenderer::draw_filled_rect(const DrawingRequest& request)
+{
+  SDLPainter::draw_filled_rect(m_renderer, request);
+}
+
+void
+SDLRenderer::draw_inverse_ellipse(const DrawingRequest& request)
+{
+  SDLPainter::draw_inverse_ellipse(m_renderer, request);
+}
+
+void
+SDLRenderer::draw_line(const DrawingRequest& request)
+{
+  SDLPainter::draw_line(m_renderer, request);
+}
+
+void
+SDLRenderer::draw_triangle(const DrawingRequest& request)
+{
+  SDLPainter::draw_triangle(m_renderer, request);
+}
+
+void
+SDLRenderer::flip()
+{
+  SDL_RenderPresent(m_renderer);
+}
+
+void
+SDLRenderer::resize(int w , int h)
+{
+  /* Neither fullscreen nor maximised is a size anybody chose, so neither is
+     kept. */
+  if (!g_config->use_fullscreen && !g_config->window_maximised)
+  {
+    g_config->window_size = Size(w, h);
+  }
+
+  apply_config();
+}
+
+void
+SDLRenderer::apply_video_mode()
+{
+  if (!g_config->use_fullscreen)
+  {
+    SDL_SetWindowFullscreen(m_window, 0);
+
+    /* Maximising a window that already is waits a full second and times out,
+       and asking for a size it already has is wasted too. */
+    const bool already_maximised =
+      (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MAXIMIZED) != 0;
+
+    if (g_config->window_maximised)
+    {
+      if (!already_maximised)
+      {
+        SDL_MaximizeWindow(m_window);
+      }
+    }
+    else
+    {
+      if (already_maximised)
+      {
+        SDL_RestoreWindow(m_window);
+      }
+
+      /* Ask for the size the window is meant to be whenever it is not already
+         it. Dragging the window to a new size records that size, so this asks
+         for nothing in that case. */
+      Size current_size;
+      SDL_GetWindowSize(m_window, &current_size.width, &current_size.height);
+      if (current_size != g_config->window_size)
+      {
+        SDL_SetWindowSize(m_window,
+                          g_config->window_size.width,
+                          g_config->window_size.height);
+      }
+    }
+  }
+  else
+  {
+    if (g_config->fullscreen_size.width == 0 &&
+        g_config->fullscreen_size.height == 0)
+    {
+        if (SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
+        {
+          log_warning << "failed to switch to desktop fullscreen mode: "
+                      << SDL_GetError() << std::endl;
+        }
+        else
+        {
+          log_info << "switched to desktop fullscreen mode" << std::endl;
+        }
+    }
+    else
+    {
+      SDL_DisplayMode mode;
+      mode.format = SDL_PIXELFORMAT_RGB888;
+      mode.w = g_config->fullscreen_size.width;
+      mode.h = g_config->fullscreen_size.height;
+      mode.refresh_rate = g_config->fullscreen_refresh_rate;
+      mode.driverdata = 0;
+
+      if (SDL_SetWindowDisplayMode(m_window, &mode) != 0)
+      {
+        log_warning << "failed to set display mode: "
+                    << mode.w << "x" << mode.h << "@" << mode.refresh_rate << ": "
+                    << SDL_GetError() << std::endl;
+      }
+      else
+      {
+        if (SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN) != 0)
+        {
+          log_warning << "failed to switch to fullscreen mode: "
+                      << mode.w << "x" << mode.h << "@" << mode.refresh_rate << ": "
+                      << SDL_GetError() << std::endl;
+        }
+        else
+        {
+          log_info << "switched to fullscreen mode: "
+                   << mode.w << "x" << mode.h << "@" << mode.refresh_rate << std::endl;
+        }
+      }
+    }
+  }
+}
+
+void
+SDLRenderer::apply_viewport()
+{
+  /* Ask how big the window came out rather than working it back out from
+     the settings, since a window manager is free to hand back something
+     other than what was asked for. */
+  Size target_size;
+  SDL_GetRendererOutputSize(m_renderer, &target_size.width, &target_size.height);
+
+  /* Zero means take the shape of the screen the game is on. */
+  float aspect_ratio = 0.0f;
+  if (g_config->aspect_size != Size(0, 0))
+  {
+    aspect_ratio = static_cast<float>(g_config->aspect_size.width) /
+                   static_cast<float>(g_config->aspect_size.height);
+  }
+
+  Size logical_size;
+  calculate_viewport(target_size,
+                     aspect_ratio,
+                     g_config->magnification,
+                     m_scale, logical_size, m_viewport);
+
+  SCREEN_WIDTH = logical_size.width;
+  SCREEN_HEIGHT = logical_size.height;
+
+  if (m_viewport.x != 0 || m_viewport.y != 0)
+  {
+    // Clear the screen to avoid garbage in unreachable areas after we
+    // reset the coordinate system
+    SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255);
+    SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_NONE);
+    SDL_RenderClear(m_renderer);
+    SDL_RenderPresent(m_renderer);
+    SDL_RenderClear(m_renderer);
+  }
+
+  /* NULL is the whole output in real pixels. A rectangle is held in scaled
+     units and moves again every time the painter changes the scale. */
+  SDL_RenderSetScale(m_renderer, m_scale.x, m_scale.y);
+  SDL_RenderSetViewport(m_renderer, NULL);
+}
+
+void
+SDLRenderer::apply_config()
+{
+  apply_video_mode();
+  apply_viewport();
+}
+
+Vector
+SDLRenderer::to_logical(int physical_x, int physical_y) const
+{
+  return Vector(static_cast<float>(physical_x - m_viewport.x) * SCREEN_WIDTH / m_viewport.w,
+                static_cast<float>(physical_y - m_viewport.y) * SCREEN_HEIGHT / m_viewport.h);
+}
+
+void
+SDLRenderer::warp_pointer(const Vector& logical)
+{
+  /* Rounded, not truncated: truncation always loses the fraction in the same
+     direction, so a pointer put back over and over creeps one way. */
+  const int x = static_cast<int>(::lround(logical.x * m_viewport.w / SCREEN_WIDTH)) + m_viewport.x;
+  const int y = static_cast<int>(::lround(logical.y * m_viewport.h / SCREEN_HEIGHT)) + m_viewport.y;
+  SDL_WarpMouseInWindow(m_window, x, y);
+}
+
+void
+SDLRenderer::set_gamma(float gamma)
+{
+  Uint16 ramp[256];
+  SDL_CalculateGammaRamp(gamma, ramp);
+  SDL_SetWindowGammaRamp(m_window, ramp, ramp, ramp);
+}
+
+/* EOF */

@@ -1,0 +1,71 @@
+IF(DEFINED ENV{PS3DEV} AND EXISTS "$ENV{PS3DEV}")
+  SET(PS3DEV "$ENV{PS3DEV}")
+ELSEIF(EXISTS "/usr/local/ps3dev")
+  SET(PS3DEV "/usr/local/ps3dev")
+ELSE()
+  SET(PS3DEV "")
+ENDIF()
+
+IF(DEFINED ENV{PSL1GHT} AND EXISTS "$ENV{PSL1GHT}")
+  SET(PSL1GHT "$ENV{PSL1GHT}")
+ELSE()
+  SET(PSL1GHT "${PS3DEV}")
+ENDIF()
+
+IF(NOT PS3DEV OR NOT EXISTS "${PSL1GHT}/ppu/lib")
+  MESSAGE(FATAL_ERROR "No PSL1GHT found. Install the PS3 toolchain under /usr/local/ps3dev, "
+                      "or set PS3DEV and PSL1GHT to its root.")
+ENDIF()
+
+SET(SUPERTUX_TARGET_CONSOLE "ps3" CACHE STRING "Console port being built")
+
+SET(CMAKE_SYSTEM_NAME Generic)
+SET(CMAKE_SYSTEM_PROCESSOR powerpc64)
+
+FIND_PROGRAM(PS3_CC NAMES powerpc64-ps3-elf-gcc ppu-lv2-gcc HINTS "${PS3DEV}/ppu/bin" "${PS3DEV}/bin")
+FIND_PROGRAM(PS3_CXX NAMES powerpc64-ps3-elf-g++ ppu-lv2-g++ HINTS "${PS3DEV}/ppu/bin" "${PS3DEV}/bin")
+FIND_PROGRAM(PS3_AR NAMES powerpc64-ps3-elf-ar ppu-lv2-ar HINTS "${PS3DEV}/ppu/bin" "${PS3DEV}/bin")
+FIND_PROGRAM(PS3_RANLIB NAMES powerpc64-ps3-elf-ranlib ppu-lv2-ranlib HINTS "${PS3DEV}/ppu/bin" "${PS3DEV}/bin")
+
+IF(NOT PS3_CC OR NOT PS3_CXX)
+  MESSAGE(FATAL_ERROR "No PPU compiler under ${PS3DEV}/ppu/bin")
+ENDIF()
+
+SET(CMAKE_C_COMPILER "${PS3_CC}" CACHE FILEPATH "PS3 C compiler" FORCE)
+SET(CMAKE_CXX_COMPILER "${PS3_CXX}" CACHE FILEPATH "PS3 C++ compiler" FORCE)
+IF(PS3_AR)
+  SET(CMAKE_AR "${PS3_AR}" CACHE FILEPATH "PS3 archiver" FORCE)
+ENDIF()
+IF(PS3_RANLIB)
+  SET(CMAKE_RANLIB "${PS3_RANLIB}" CACHE FILEPATH "PS3 ranlib" FORCE)
+ENDIF()
+
+SET(CMAKE_FIND_ROOT_PATH "${PSL1GHT}/ppu" "${PSL1GHT}/portlibs/ppu")
+SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+
+SET(ENV{PKG_CONFIG_PATH} "${PSL1GHT}/portlibs/ppu/lib/pkgconfig")
+SET(ENV{PKG_CONFIG_LIBDIR} "${PSL1GHT}/portlibs/ppu/lib/pkgconfig")
+
+FIND_PROGRAM(PS3_PKG_CONFIG NAMES ppu-lv2-pkg-config psl1ght-pkg-config HINTS "${PS3DEV}/bin" "${PS3DEV}/ppu/bin")
+IF(PS3_PKG_CONFIG)
+  SET(PKG_CONFIG_EXECUTABLE "${PS3_PKG_CONFIG}" CACHE FILEPATH "pkg-config for the PS3 target" FORCE)
+ENDIF()
+
+SET(CMAKE_C_FLAGS_INIT "${CMAKE_C_FLAGS_INIT} -O3 -mhard-float -fmodulo-sched -fomit-frame-pointer -fno-math-errno -ffunction-sections -fdata-sections -isystem ${PSL1GHT}/ppu/include")
+SET(CMAKE_CXX_FLAGS_INIT "${CMAKE_CXX_FLAGS_INIT} -O3 -mhard-float -fmodulo-sched -fomit-frame-pointer -fno-math-errno -ffunction-sections -fdata-sections -D_GLIBCXX11_USE_C99_STDIO -D_GLIBCXX11_USE_C99_STDLIB=1 -isystem ${PSL1GHT}/ppu/include")
+SET(CMAKE_EXE_LINKER_FLAGS_INIT "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--gc-sections -L${PSL1GHT}/ppu/lib -L${PSL1GHT}/portlibs/ppu/lib")
+SET(CMAKE_INCLUDE_PATH "${PSL1GHT}/ppu/include" "${PSL1GHT}/portlibs/ppu/include")
+SET(CMAKE_LIBRARY_PATH "${PSL1GHT}/ppu/lib" "${PSL1GHT}/portlibs/ppu/lib")
+
+SET(ENABLE_OPENGL OFF CACHE BOOL "Enable OpenGL support")
+SET(ENABLE_GLEW OFF CACHE BOOL "Use GLEW to load OpenGL extensions")
+SET(ENABLE_LIGHTMAP_FBO OFF CACHE BOOL "Draw the lightmap into its texture with a framebuffer object")
+SET(ENABLE_NPOT_TEXTURES ON CACHE BOOL "Assume the hardware accepts non-power-of-two textures")
+SET(TEXTURE_ALIGNMENT 1 CACHE STRING "Round texture sides up to a multiple of this many pixels")
+SET(ENABLE_OPENAL OFF CACHE BOOL "Build the OpenAL sound backend")
+SET(ENABLE_SDL_MIXER ON CACHE BOOL "Build the SDL_mixer sound backend")
+SET(ENABLE_CONSOLE OFF CACHE BOOL "Build the interactive console")
+SET(SUPERTUX_LTO OFF CACHE BOOL "Compile and link with link time optimization")

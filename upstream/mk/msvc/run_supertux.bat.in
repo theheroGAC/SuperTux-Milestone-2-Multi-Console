@@ -1,0 +1,4 @@
+@echo off
+set PATH=@DEPENDENCY_FOLDER@\dll;%PATH%
+ 
+start supertux2.exe %*

@@ -1,0 +1,64 @@
+// src/video/sdl/sdl_video_system.hpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+//  SuperTux
+//  Copyright (C) 2014 Ingo Ruhnke <grumbel@gmail.com>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#ifndef HEADER_SUPERTUX_VIDEO_SDL_SDL_VIDEO_SYSTEM_HPP
+#define HEADER_SUPERTUX_VIDEO_SDL_SDL_VIDEO_SYSTEM_HPP
+
+#include <memory>
+#include <SDL.h>
+
+#include "video/sdl/sdl_renderer.hpp"
+#include "video/video_system.hpp"
+
+class TextureManager;
+
+class SDLVideoSystem : public VideoSystem
+{
+private:
+  /** Held as the SDL renderer rather than the general one, since the vsync
+      setting is asked for through the SDL renderer it wraps. */
+  std::unique_ptr<SDLRenderer> m_renderer;
+  std::unique_ptr<Lightmap> m_lightmap;
+  std::unique_ptr<TextureManager> m_texture_manager;
+  unsigned int m_max_texture_size;
+
+public:
+  SDLVideoSystem();
+
+  Renderer& get_renderer() const override;
+  Lightmap& get_lightmap() const override;
+  TexturePtr new_texture(SDL_Surface *image) override;
+  unsigned int get_max_texture_size() const override;
+  SurfaceData* new_surface_data(const Surface& surface) override;
+  void free_surface_data(SurfaceData* surface_data) override;
+
+  void apply_config() override;
+  void resize(int w, int h) override;
+
+  void set_vsync(int mode) override;
+  int get_vsync() const override;
+
+private:
+  SDLVideoSystem(const SDLVideoSystem&) = delete;
+  SDLVideoSystem& operator=(const SDLVideoSystem&) = delete;
+};
+
+#endif
+
+/* EOF */

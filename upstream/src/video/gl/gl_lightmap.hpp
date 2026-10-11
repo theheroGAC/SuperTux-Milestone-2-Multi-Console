@@ -1,0 +1,88 @@
+// src/video/gl/gl_lightmap.hpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+//  SuperTux
+//  Copyright (C) 2006 Matthias Braun <matze@braunis.de>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#ifndef HEADER_SUPERTUX_VIDEO_GL_LIGHTMAP_HPP
+#define HEADER_SUPERTUX_VIDEO_GL_LIGHTMAP_HPP
+
+#include <config.h>
+#include <memory>
+#include <vector>
+
+#include "video/lightmap.hpp"
+
+struct DrawingRequest;
+
+class Texture;
+class GLTexture;
+
+class GLLightmap : public Lightmap
+{
+public:
+  GLLightmap();
+  ~GLLightmap();
+
+  void start_draw(const Color &ambient_color) override;
+  void end_draw() override;
+  void do_draw() override;
+  void draw_surface(const DrawingRequest& request) override;
+  void draw_surface_part(const DrawingRequest& request) override;
+  void draw_gradient(const DrawingRequest& request) override;
+  void draw_filled_rect(const DrawingRequest& request) override;
+  void draw_inverse_ellipse(const DrawingRequest& request) override;
+  void get_light(const DrawingRequest& request) const override;
+  void draw_line(const DrawingRequest& request) override;
+  void draw_triangle(const DrawingRequest& request) override;
+
+private:
+  /** Point drawing at the lightmap, and back at the screen afterwards. Which
+      of the two ways this happens is settled at build time, since a target
+      missing either call cannot compile the path that uses it. */
+  void bind_lightmap();
+  void unbind_lightmap();
+
+  /** Fetch the finished lightmap for the queries to be answered from. */
+  void read_back() const;
+
+  static const int s_LIGHTMAP_DIV = 5;
+
+  std::shared_ptr<GLTexture> m_lightmap;
+  int m_lightmap_width;
+  int m_lightmap_height;
+  float m_lightmap_uv_right;
+  float m_lightmap_uv_bottom;
+  /** The viewport in use before the lightmap redefined it. Read through
+      glGetIntegerv, as OpenGX answers GL_VIEWPORT from nothing else. */
+  GLint m_old_viewport[4];
+  /** The finished lightmap, four bytes to a pixel, rows running bottom up.
+      Filled at most once a frame, and only if something asks about it. */
+  mutable std::vector<GLubyte> m_readback;
+  mutable bool m_readback_filled;
+#ifdef ENABLE_LIGHTMAP_FBO
+  /** Holds the lightmap texture as its colour attachment. */
+  GLuint m_framebuffer;
+#endif
+
+private:
+  GLLightmap(const GLLightmap&);
+  GLLightmap& operator=(const GLLightmap&);
+};
+
+#endif
+
+/* EOF */

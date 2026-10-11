@@ -1,0 +1,24 @@
+# Build output directories
+build/
+bin/
+tmp/
+
+# Generated packages and distributions
+dist/
+
+# Dependencies downloaded/built locally
+deps/
+
+# Build and debug log files
+*.log
+
+# System and temporary files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor directories
+.vscode/
+.idea/
+*.swp
+*~

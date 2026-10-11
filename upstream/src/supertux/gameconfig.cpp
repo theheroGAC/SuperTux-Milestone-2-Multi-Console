@@ -1,0 +1,218 @@
+// src/supertux/gameconfig.cpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+//  SuperTux -  A Jump'n Run
+//  Copyright (C) 2006 Matthias Braun <matze@braunis.de>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#include "supertux/gameconfig.hpp"
+
+#include <stdexcept>
+#include <exception>
+
+#include "control/input_manager.hpp"
+#include "util/reader_document.hpp"
+#include "util/reader_mapping.hpp"
+#include "util/writer.hpp"
+#include "util/log.hpp"
+#include "util/ports.hpp"
+#include "supertux/globals.hpp"
+
+Config::Config() :
+  profile(1),
+#ifdef __wii__
+  fullscreen_size(640, 448),
+#elif defined(SUPERTUX_PLATFORM_CONSOLE)
+  fullscreen_size(Ports::native_width(), Ports::native_height()),
+#else
+  fullscreen_size(0, 0),
+#endif
+  fullscreen_refresh_rate(0),
+  window_size(1280, 800),
+  window_maximised(false),
+  aspect_size(0, 0), // auto detect
+  magnification(0.0f),
+#ifdef __wii__
+  /* Wii Homebrew has no window mode to fall back to. */
+  use_fullscreen(true),
+#elif defined(SUPERTUX_PLATFORM_CONSOLE)
+  use_fullscreen(true),
+#else
+  use_fullscreen(false),
+#endif
+  video(VideoSystem::AUTO_VIDEO),
+  audio_backend(AudioBackend::Automatic),
+  vsync(1),
+  show_fps(false),
+  show_player_pos(false),
+  sound_enabled(true),
+  music_enabled(true),
+  random_seed(0), // set by time(), by default (unless in config)
+  start_level(),
+  start_demo(),
+  record_demo(),
+  tux_spawn_pos(),
+  keyboard_config(),
+  joystick_config(),
+  developer_mode(false),
+  christmas_mode(false),
+  transitions_enabled(true)
+{
+}
+
+Config::~Config()
+{}
+
+void
+Config::load()
+{
+  auto doc = ReaderDocument::parse("config");
+  auto root = doc.get_root();
+  if(root.get_name() != "supertux-config")
+  {
+    throw std::runtime_error("File is not a supertux-config file");
+  }
+
+  auto config_lisp = root.get_mapping();
+  config_lisp.get("profile", profile);
+  config_lisp.get("show_fps", show_fps);
+  config_lisp.get("show_player_pos", show_player_pos);
+  config_lisp.get("developer", developer_mode);
+
+  if(is_christmas()) {
+    if(!config_lisp.get("christmas", christmas_mode))
+    {
+      christmas_mode = true;
+    }
+  }
+  config_lisp.get("transitions_enabled", transitions_enabled);
+  config_lisp.get("random_seed", random_seed);
+
+  ReaderMapping config_video_lisp;
+  if(config_lisp.get("video", config_video_lisp))
+  {
+    config_video_lisp.get("fullscreen", use_fullscreen);
+    std::string video_string;
+    config_video_lisp.get("video", video_string);
+    video = VideoSystem::get_video_system(video_string);
+    /* This was on or off before it could also be adaptive. A file written by
+       an older build still says true or false there, and reading that as a
+       number throws, which would take the rest of the file down with it and
+       leave the player with nothing they had set. */
+    try
+    {
+      config_video_lisp.get("vsync", vsync);
+    }
+    catch(const std::exception&)
+    {
+      bool vsync_on = true;
+      config_video_lisp.get("vsync", vsync_on);
+      vsync = vsync_on ? 1 : 0;
+    }
+
+    config_video_lisp.get("fullscreen_width",  fullscreen_size.width);
+    config_video_lisp.get("fullscreen_height", fullscreen_size.height);
+    config_video_lisp.get("fullscreen_refresh_rate", fullscreen_refresh_rate);
+
+    config_video_lisp.get("window_width",  window_size.width);
+    config_video_lisp.get("window_height", window_size.height);
+    config_video_lisp.get("window_maximised", window_maximised);
+
+    config_video_lisp.get("aspect_width",  aspect_size.width);
+    config_video_lisp.get("aspect_height", aspect_size.height);
+
+    config_video_lisp.get("magnification", magnification);
+  }
+
+  ReaderMapping config_audio_lisp;
+  if(config_lisp.get("audio", config_audio_lisp)) {
+    config_audio_lisp.get("sound_enabled", sound_enabled);
+    config_audio_lisp.get("music_enabled", music_enabled);
+  }
+
+  ReaderMapping config_control_lisp;
+  if (config_lisp.get("control", config_control_lisp))
+  {
+    ReaderMapping keymap_lisp;
+    if (config_control_lisp.get("keymap", keymap_lisp))
+    {
+      keyboard_config.read(keymap_lisp);
+    }
+
+    ReaderMapping joystick_lisp;
+    if (config_control_lisp.get("joystick", joystick_lisp))
+    {
+      joystick_config.read(joystick_lisp);
+    }
+  }
+}
+
+void
+Config::save()
+{
+  Writer writer("config");
+
+  writer.start_list("supertux-config");
+
+  writer.write("profile", profile);
+  writer.write("show_fps", show_fps);
+  writer.write("show_player_pos", show_player_pos);
+  writer.write("developer", developer_mode);
+  if(is_christmas()) {
+    writer.write("christmas", christmas_mode);
+  }
+  writer.write("transitions_enabled", transitions_enabled);
+
+  writer.start_list("video");
+  writer.write("fullscreen", use_fullscreen);
+  writer.write("video", VideoSystem::get_video_string(video));
+  writer.write("vsync", vsync);
+
+  writer.write("fullscreen_width",  fullscreen_size.width);
+  writer.write("fullscreen_height", fullscreen_size.height);
+  writer.write("fullscreen_refresh_rate", fullscreen_refresh_rate);
+
+  writer.write("window_width",  window_size.width);
+  writer.write("window_height", window_size.height);
+  writer.write("window_maximised", window_maximised);
+
+  writer.write("aspect_width",  aspect_size.width);
+  writer.write("aspect_height", aspect_size.height);
+
+  writer.write("magnification", magnification);
+
+  writer.end_list("video");
+
+  writer.start_list("audio");
+  writer.write("sound_enabled", sound_enabled);
+  writer.write("music_enabled", music_enabled);
+  writer.end_list("audio");
+
+  writer.start_list("control");
+  {
+    writer.start_list("keymap");
+    keyboard_config.write(writer);
+    writer.end_list("keymap");
+
+    writer.start_list("joystick");
+    joystick_config.write(writer);
+    writer.end_list("joystick");
+  }
+  writer.end_list("control");
+
+  writer.end_list("supertux-config");
+}
+
+/* EOF */

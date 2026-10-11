@@ -1,0 +1,71 @@
+// src/object/block.hpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+//  SuperTux
+//  Copyright (C) 2006 Matthias Braun <matze@braunis.de>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#ifndef HEADER_SUPERTUX_OBJECT_BLOCK_HPP
+#define HEADER_SUPERTUX_OBJECT_BLOCK_HPP
+
+#include <memory>
+#include <string>
+
+#include "sprite/sprite_ptr.hpp"
+#include "supertux/moving_object.hpp"
+
+class Player;
+class ReaderMapping;
+
+class Block : public MovingObject
+{
+public:
+  Block(SpritePtr sprite);
+  Block(const ReaderMapping& lisp, const std::string& sprite_file);
+  ~Block();
+
+  /** Whether this block has already been hit for whatever it was holding. */
+  bool is_spent() const;
+
+  virtual HitResponse collision(GameObject& other, const CollisionHit& hit) override;
+  virtual void update(float elapsed_time) override;
+  virtual void draw(DrawingContext& context) override;
+
+protected:
+
+protected:
+  friend class FlipLevelTransformer;
+
+  virtual void hit(Player& player) = 0;
+  void start_bounce(GameObject* hitter);
+  void start_break(GameObject* hitter);
+  void break_me();
+
+  SpritePtr sprite;
+  std::string sprite_name;
+  bool bouncing;
+  bool breaking;
+  float bounce_dir;
+  float bounce_offset;
+  float original_y;
+
+private:
+  Block(const Block&);
+  Block& operator=(const Block&);
+};
+
+#endif
+
+/* EOF */

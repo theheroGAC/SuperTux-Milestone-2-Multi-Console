@@ -1,0 +1,66 @@
+// src/scripting/level_time.hpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+//  SuperTux
+//  Copyright (C) 2006 Matthias Braun <matze@braunis.de>
+//
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU General Public License as published by
+//  the Free Software Foundation, either version 3 of the License, or
+//  (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU General Public License for more details.
+//
+//  You should have received a copy of the GNU General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#ifndef HEADER_SUPERTUX_SCRIPTING_LEVEL_TIME_HPP
+#define HEADER_SUPERTUX_SCRIPTING_LEVEL_TIME_HPP
+
+class LevelTime;
+
+#include <simplesquirrel/exposable_class.hpp>
+
+namespace scripting {
+
+class LevelTime : public ssq::ExposableClass
+{
+public:
+  LevelTime(::LevelTime* level_time);
+  ~LevelTime();
+
+  /**
+   * Resumes the countdown
+   */
+  void start();
+
+  /**
+   * Pauses the countdown
+   */
+  void stop();
+
+  /**
+   * Returns the number of seconds left on the clock
+   */
+  float get_time() const;
+
+  /**
+   * Changes the number of seconds left on the clock
+   */
+  void set_time(float time_left);
+
+  ::LevelTime* level_time;
+
+private:
+  LevelTime(const LevelTime&);
+  LevelTime& operator=(const LevelTime&);
+};
+
+}
+
+#endif
+
+/* EOF */
